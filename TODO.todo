@@ -1,0 +1,12 @@
+# Project FED_RATE_PREDICTION
+
+[TODO]
+- Construction du dataset en utilsant les raw features : diff, moving average etc. 
+- Bien faire la différence entre les data en freq daily et monthly
+
+[IN PROGRESS]
+- 
+
+[DONE]
+- Scraping des dates de fomc meeting
+- construction du fichier dff_processed : date du meeting + taux annoncé à ce meeting 

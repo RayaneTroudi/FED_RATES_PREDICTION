@@ -3,7 +3,6 @@
 # --- 
 from scrapped_data import get_FOMC_meeting_dates
 import pandas as pd 
-import datetime, math
 # --- FUNCTION TO BUILD THE FED RATES MONTHLY
 
 def month_str_to_int(mois):
@@ -53,7 +52,6 @@ def build_fed_meeting_dates():
 
 
 def build_rates_at_meeting_dates():
-    import pandas as pd
 
     # Load meeting dates
     df_meeting_dates_rates = pd.read_csv(
@@ -87,10 +85,13 @@ def build_rates_at_meeting_dates():
     )
 
     # Export
+    df_merged.rename(columns={"DATE": "observation_date"}, inplace=True)
     df_merged.to_csv(
         "/Users/rayane_macbook_pro/Documents/Prog_ENSAE/ML_FOR_PORTF_TRADING/FED_PROJECT/data/processed/DFF_PROCESSED.csv",
         index=False
     )
 
     return df_merged
+
+build_rates_at_meeting_dates()
 
