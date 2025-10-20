@@ -1,7 +1,7 @@
 # ---
 # THIS FILE IS USED TO CLEAN THE RAW DATA AND CREATE A CLEAN VERSION OF THE DATASET
 # --- 
-from scrapped_data import get_FOMC_meeting_dates
+from preprocessing.scraper import get_FOMC_meeting_dates
 import pandas as pd 
 # --- FUNCTION TO BUILD THE FED RATES MONTHLY
 
