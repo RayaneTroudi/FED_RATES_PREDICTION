@@ -1,14 +1,15 @@
 import pandas as pd
-from features_config import get_feature_config  # ← garde le bon chemin relatif
+from src.features.features_config import get_feature_config
 
 def compute_ma(series, window):
-    return series.rolling(window).mean()
+    return series.rolling(window).mean().round(2)
 
 def compute_diff(series, lag):
-    return series.diff(lag)
+    return series.diff(lag).round(2)
 
 def compute_gap(series, window):
-    return series - series.rolling(window).mean()
+    return series - series.rolling(window).mean().round(2)
+
 
 def apply_transformations(df_feature, feature_name, config=None):
 

@@ -1,6 +1,6 @@
 import pandas as pd
-from transformations import apply_transformations
-from features_config import get_feature_config
+from src.features.features_config import get_feature_config
+from src.features.transformations import apply_transformations
 
 # this function is used to build the dataset that 
 # the models will use by compute basic transformations of each features like MA or DIFF
@@ -49,13 +49,20 @@ def build_dataset(config):
     for df_next in all_features[1:]:
         dataset = pd.merge(dataset, df_next, on='observation_date', how='inner')
 
-    dataset.sort_values('observation_date', inplace=True)
-    dataset.dropna(axis=0, how='any', inplace=True)
 
+    # Targeting - Cleaning NA 
+    dataset.ffill(inplace=True)
+    dataset.fillna(dataset.mean(), inplace=True)
+    dataset.drop('DFF_DIFF1',axis=1,inplace=True)
+    dataset.to_csv('./data/processed/DATASET_FINAL.csv',index=False)
+    
     print("[INFO] Dataset built successfully.")
+    
     return dataset
             
-        
+
+
+    
         
     
 build_dataset(config=get_feature_config())
