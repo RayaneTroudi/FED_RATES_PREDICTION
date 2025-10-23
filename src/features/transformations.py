@@ -1,4 +1,3 @@
-import pandas as pd
 from src.features.features_config import get_feature_config
 
 def compute_ma(series, window):
