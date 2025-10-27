@@ -1,8 +1,12 @@
 # Project FED_RATE_PREDICTION
 
 [TODO]
-- Construction du dataset en utilsant les raw features : diff, moving average etc. 
-- Bien faire la différence entre les data en freq daily et monthly
+- Rayane : finir la régression logistique , tester avec des nouvelle variables
+- Ella : Random Forest , tester etc. 
+- Choquer le data de 1% du sur une variable pour observer la prédiction du modèle et établir une frontière de décision
+- CROSS-VALIDATION - TRAIN TEST SPLIT : TOUJOURS LE SPLIT A FAIRE AVEC LE TEMPS EN RESPECTANT L ORDRE DU TEMPS
+- Semaine pro : Markov
+- Sinon si trop compliqué : LLM/NLP pour récupérer les mots les plus dit lors du discours = orientation directionnel
 
 [IN PROGRESS]
 - 
@@ -10,3 +14,5 @@
 [DONE]
 - Scraping des dates de fomc meeting
 - construction du fichier dff_processed : date du meeting + taux annoncé à ce meeting 
+- Construction du dataset en utilsant les raw features : diff, moving average etc. 
+- Bien faire la différence entre les data en freq daily et monthly

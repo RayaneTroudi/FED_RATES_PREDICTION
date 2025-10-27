@@ -1,18 +1,26 @@
-# Environnements
-bce_env/
+# === ENVIRONNEMENTS VIRTUELS ===
+.venv/
 venv/
+bce_env/
+
+# === FICHIERS COMPILÉS PYTHON ===
 __pycache__/
+*.pyc
+
+# === NOTEBOOKS ===
 .ipynb_checkpoints/
 
-# Données locales
-# Garder les petits jeux, ignorer le reste
-data/*.csv
+# === DONNÉES LOCALES ===
+# Ignorer tous les CSV sauf ceux explicitement versionnés
+data/**/*.csv
 !data/raw/
 !data/processed/
 
-
-# OS / IDE
+# === OS / IDE ===
 .DS_Store
 .vscode/
 .idea/
 
+# === AUTRES TEMPORAIRES ===
+*.log
+*.tmp

@@ -1,10 +1,10 @@
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-import sys, os
-import pandas as pd
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from src.features.features_engineering import build_dataset
 from src.features.features_config import get_feature_config
+
+import pandas as pd
 
 def logistic_regression_temporal(dataset, target_col, horizon=1):
     df = dataset.copy().sort_index()
