@@ -7,9 +7,12 @@
 - CROSS-VALIDATION - TRAIN TEST SPLIT : TOUJOURS LE SPLIT A FAIRE AVEC LE TEMPS EN RESPECTANT L ORDRE DU TEMPS
 - Semaine pro : Markov
 - Sinon si trop compliqué : LLM/NLP pour récupérer les mots les plus dit lors du discours = orientation directionnel
+- /!\ /!\ construire un nouveau dataset avec le taux de chomage connue au jour de la decision et faire des ma, diff entre les différents meeting
 
 [IN PROGRESS]
-- 
+- La chaine de markov est implémenté mais seulement 51% de bonnes réponses, ajoutrer plus de features diff etc, 
+- normaliser les data
+- regarder le parametre class weight
 
 [DONE]
 - Scraping des dates de fomc meeting

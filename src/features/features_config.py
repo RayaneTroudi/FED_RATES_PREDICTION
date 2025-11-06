@@ -10,7 +10,7 @@ def get_feature_config():
         "VIXCLS": {
             "frequency": "daily",
             "transformations": {
-                "ma": {"windows": [7, 14, 21,28]},  
+                "ma": {"windows":[4,8,12]},  
                 "diff": {"lags": [1]},
                 "gap": {"windows": []}               
             }
@@ -18,22 +18,22 @@ def get_feature_config():
         "UNRATE": {
             "frequency": "monthly",
             "transformations": {
-                "ma": {"windows": [3, 6,9,12]},
-                "diff": {"lags": [1]}
+                "ma": {"windows": [4,8,12]},
+                "diff": {"lags": [1,2]}
             }
         },
         "CPIAUCSL": {
             "frequency": "monthly",
             "transformations": {
-                "diff": {"lags": [1]}
+                "diff": {"lags": [1,2]}
             }
         },
         "T10Y2Y": {
             "frequency": "daily",
             "transformations": {
-                "ma" : {"windows":[7,14,21,28]},
-                "diff": {"lags": [1]}
+                "ma" : {"windows":[4,8,12]},
+                "diff": {"lags": [1,2]}
             }
-        } 
+        }
     }
 
