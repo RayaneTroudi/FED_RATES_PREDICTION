@@ -1,81 +1,92 @@
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
 
-from src.features.features_engineering import build_dataset_meeting_transform
-from src.features.features_config import get_feature_config
+# === Fonction : construction de la target ===
+def build_target(df, target_col="DFF", horizon=1, invert_target=False):
+    if invert_target:
+        df["target"] = (df[target_col].shift(-horizon) < df[target_col]).astype(int)
+    else:
+        df["target"] = (df[target_col].shift(-horizon) > df[target_col]).astype(int)
+    return df.dropna(subset=["target"]).copy()
 
+# === Fonction : attribution du régime monétaire ===
+def assign_regime(date):
+    if date < pd.Timestamp("2008-09-01"):
+        return "TIGHTENING_PRE2008"
+    elif date < pd.Timestamp("2016-12-01"):
+        return "QE_ZERO_RATE"
+    elif date < pd.Timestamp("2020-01-01"):
+        return "NORMALIZATION_2017_2019"
+    else:
+        return "INFLATION_2021_2025"
 
-def logistic_regression_temporal(dataset, target_col, horizon=1, threshold=0.5):
-    df = dataset.copy().sort_index()
+# === Fonction : entraînement par régime ===
+def train_by_regime(df, regime_col="regime"):
+    results = []
+    for regime, sub in df.groupby(regime_col):
+        if len(sub) < 20:
+            continue
+        print(f"\n=== RÉGIME : {regime} ===")
+        sub = build_target(sub, target_col="DFF", horizon=1, invert_target=False)
+        sub = sub.sort_values("observation_date")
+        split_idx = int(len(sub) * 0.7)
+        train_df = sub.iloc[:split_idx]
+        test_df = sub.iloc[split_idx:]
 
-    # --- construction de la cible ---
-    df['target'] = (df[target_col].shift(-horizon) > df[target_col]).astype(int)
-    df.dropna(inplace=True)
+        X_train = train_df.select_dtypes(include=[np.number]).drop(columns=["DFF", "target"], errors="ignore").fillna(0)
+        y_train = train_df["target"].astype(int)
+        X_test = test_df.select_dtypes(include=[np.number]).drop(columns=["DFF", "target"], errors="ignore").fillna(0)
+        y_test = test_df["target"].astype(int)
 
-    # --- sélection stricte des features numériques ---
-    feature_cols = [
-        col for col in df.columns
-        if col not in ['target', target_col]
-        and pd.api.types.is_numeric_dtype(df[col])
-    ]
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
 
-    # --- split temporel ---
-    split = int(len(df) * 0.8)
-    X_train, X_test = df[feature_cols].iloc[:split], df[feature_cols].iloc[split:]
-    y_train, y_test = df['target'].iloc[:split], df['target'].iloc[split:]
+        model = LogisticRegressionCV(
+            Cs=10,
+            cv=5,
+            penalty="elasticnet",
+            solver="saga",
+            l1_ratios=[0.5],
+            max_iter=10000,
+            n_jobs=-1
+        )
+        model.fit(X_train_scaled, y_train)
 
-    # --- normalisation sans fuite ---
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+        y_pred = model.predict(X_test_scaled)
+        y_proba = model.predict_proba(X_test_scaled)[:, 1]
 
-    # --- modèle pondéré ---
-    model = LogisticRegression(max_iter=5000, class_weight='balanced')
-    model.fit(X_train, y_train)
+        acc = accuracy_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_proba)
+        print(f"Accuracy : {acc:.3f}, AUC : {auc:.3f}")
 
-    # --- prédictions avec seuil ajusté ---
-    y_pred_prob = model.predict_proba(X_test)[:, 1]
-    y_pred = (y_pred_prob >= threshold).astype(int)
+        coef_df = pd.DataFrame({
+            "Feature": X_train.columns,
+            "Coefficient": model.coef_[0]
+        }).sort_values("Coefficient", ascending=False)
+        print(coef_df.head(10))
 
-    # --- évaluation ---
-    acc = accuracy_score(y_test, y_pred)
-    print("\n=== LOGISTIC REGRESSION RESULTS ===")
-    print(f"Accuracy: {acc:.4f} | Threshold: {threshold}")
-    print("\nConfusion matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    print("\nClassification report:")
-    print(classification_report(y_test, y_pred, digits=4))
-    print("\nCoefficients:")
-    print(pd.Series(model.coef_[0], index=feature_cols))
-    print("\nIntercept:", model.intercept_[0])
+        results.append({
+            "regime": regime,
+            "accuracy": acc,
+            "auc": auc,
+            "n_obs": len(sub)
+        })
+    return pd.DataFrame(results)
 
-    # --- histogramme des probabilités ---
-    plt.figure(figsize=(7,4))
-    plt.hist(y_pred_prob, bins=30, edgecolor='k')
-    plt.axvline(threshold, color='red', linestyle='--', label=f'Threshold={threshold}')
-    plt.legend()
-    plt.title("Distribution des probabilités prédites")
-    plt.xlabel("P(y=1)")
-    plt.ylabel("Fréquence")
-    plt.show()
-    
-    from sklearn.metrics import precision_recall_curve
-    prec, rec, thr = precision_recall_curve(y_test, y_pred_prob)
+# === Chargement du dataset ===
+df = pd.read_csv("./data/processed/MEETING_WITH_TEXT_MACRO.csv")
 
-    plt.plot(thr, prec[:-1], label='Precision')
-    plt.plot(thr, rec[:-1], label='Recall')
-    plt.xlabel("Threshold")
-    plt.legend()
-    plt.show()
+# === Conversion des dates et création du régime ===
+df["observation_date"] = pd.to_datetime(df["observation_date"])
+df["regime"] = df["observation_date"].apply(assign_regime)
 
+# === Entraînement par régime ===
+summary = train_by_regime(df, regime_col="regime")
 
-    return model, acc, df
-
-
-# --- exécution principale ---
-dataset_for_training = build_dataset_meeting_transform(config=get_feature_config())
-logistic_regression_temporal(dataset_for_training, target_col='DFF', horizon=1, threshold=0.4)
+# === Synthèse finale ===
+print("\n=== SYNTHÈSE GLOBALE ===")
+print(summary)

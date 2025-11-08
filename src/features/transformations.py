@@ -1,4 +1,4 @@
-from src.features.features_config import get_feature_config
+from src.features.features_config_daily import get_feature_config
 
 def compute_ma(series, window):
     return series.rolling(window).mean().round(2)
