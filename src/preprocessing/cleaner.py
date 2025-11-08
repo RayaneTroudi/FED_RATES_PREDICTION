@@ -1,97 +1,115 @@
-# ---
-# THIS FILE IS USED TO CLEAN THE RAW DATA AND CREATE A CLEAN VERSION OF THE DATASET
-# --- 
-from preprocessing.scraper import get_FOMC_meeting_dates
-import pandas as pd 
-# --- FUNCTION TO BUILD THE FED RATES MONTHLY
+import re
+import pandas as pd
+from datetime import datetime
 
-def month_str_to_int(mois):
-    mapping = {
-        "january": 1, "jan": 1,
-        "february": 2, "feb": 2,
-        "march": 3, "mar": 3,
-        "april": 4, "apr": 4,
-        "may": 5,
-        "june": 6, "jun": 6,
-        "july": 7, "jul": 7,
-        "august": 8, "aug": 8,
-        "september": 9, "sep": 9,
-        "october": 10, "oct": 10,
-        "november": 11, "nov": 11,
-        "december": 12, "dec": 12
-    }
-    return mapping.get(mois.lower(), float('nan'))
+# =============================================================================
+# 1. EXTRACTION ET NETTOYAGE DES DATES DE MEETING FOMC
+# =============================================================================
 
-def build_fed_meeting_dates():
-    
-    df_fomc_meeting = get_FOMC_meeting_dates(start_date=2000, end_date=2019)
-    df_fomc_meeting_preprocessed = pd.DataFrame()
-    arr_fomc_meeting_date = []
+df_raw = pd.read_csv("./data/raw/FOMC_meetings_full.csv", header=None, names=["Meeting_Date"])
 
-    for meeting_date in df_fomc_meeting["Meeting Date"]:
-        try:
-            year = meeting_date.split(', ')[1]
-            day = meeting_date.split(', ')[0].split(' ')[1].split('-')
-            if len(day) == 1:
-                day_ = day[0]
-            else:
-                day_ = day[1][0:2]
-                print(day_)
-            month_str = meeting_date.split(', ')[0].split(' ')[0].split('/')[0]
-            month_num = month_str_to_int(month_str)
-            arr_fomc_meeting_date.append(f"{year}-{int(month_num):02d}-{int(day_):02d}")
-        except Exception as e:
-            print(f"Erreur sur {meeting_date}: {e}")
-            continue
+pattern_meeting = re.compile(r"^([A-Za-z]+)\s+(\d{1,2})(?:-(\d{1,2}))?\s+Meeting\s*-\s*(\d{4})$")
+pattern_range = re.compile(r'"?([A-Za-z/]+)\s+(\d{1,2})(?:-(\d{1,2})\*?)?,\s*(\d{4})"?')
 
-    df_fomc_meeting_preprocessed["Meeting_Date"] = arr_fomc_meeting_date
-    df_fomc_meeting_preprocessed.sort_values(by='Meeting_Date', inplace=True)
-    df_fomc_meeting_preprocessed.to_csv('/Users/rayane_macbook_pro/Documents/Prog_ENSAE/ML_FOR_PORTF_TRADING/FED_PROJECT/data/processed/FOMC_MEETING.csv', index=False)
-    return df_fomc_meeting_preprocessed
+months = {
+    "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+    "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12,
+    "Jan/Feb": (1, 2), "Feb/Mar": (2, 3), "Mar/Apr": (3, 4), "Apr/May": (4, 5),
+    "May/Jun": (5, 6), "Jun/Jul": (6, 7), "Jul/Aug": (7, 8), "Aug/Sep": (8, 9),
+    "Sep/Oct": (9, 10), "Oct/Nov": (10, 11), "Nov/Dec": (11, 12)
+}
 
+dates = []
 
+for val in df_raw["Meeting_Date"]:
+    if pd.isna(val):
+        continue
+    val = str(val).strip()
+    if "Conference Call" in val:
+        continue
 
-def build_rates_at_meeting_dates():
+    # Cas 1 : "February 1-2 Meeting - 2000"
+    m = pattern_meeting.match(val)
+    if m:
+        month, day1, day2, year = m.groups()
+        if month in months:
+            try:
+                day = int(day2) if day2 else int(day1)
+                dt = datetime(int(year), months[month], day)
+            except ValueError:
+                dt = datetime(int(year), months[month], 1)
+            dates.append(dt)
+        continue
 
-    # Load meeting dates
-    df_meeting_dates_rates = pd.read_csv(
-        "/Users/rayane_macbook_pro/Documents/Prog_ENSAE/ML_FOR_PORTF_TRADING/FED_PROJECT/data/processed/FOMC_MEETING.csv",
-        header=0
-    )
+    # Cas 2 : "Apr/May 30-1, 2024"
+    r = pattern_range.search(val)
+    if r:
+        month, day1, day2, year = r.groups()
+        if month in months:
+            try:
+                month_val = months[month]
+                if isinstance(month_val, tuple):
+                    month_val = month_val[1]  # mois le plus tardif
+                day = int(day2) if day2 else int(day1)
+                dt = datetime(int(year), month_val, day)
+            except ValueError:
+                dt = datetime(int(year), month_val, 1)
+            dates.append(dt)
 
-    # Load daily rates
-    df_fomc_rates_daily = pd.read_csv(
-        "/Users/rayane_macbook_pro/Documents/Prog_ENSAE/ML_FOR_PORTF_TRADING/FED_PROJECT/data/raw/DFF.csv",
-        header=0
-    )
+df_clean = pd.DataFrame(sorted(dates), columns=["observation_date"])
+df_clean["observation_date"] = pd.to_datetime(df_clean["observation_date"])
+df_clean.to_csv("./data/processed/FOMC_MEETINGS.csv", index=False)
 
-    # Rename and convert to prepare the merge
-    df_meeting_dates_rates.rename(columns={"Meeting_Date": "DATE"}, inplace=True)
-    df_fomc_rates_daily.rename(columns={"observation_date": "DATE"}, inplace=True)
-    df_meeting_dates_rates["DATE"] = pd.to_datetime(df_meeting_dates_rates["DATE"])
-    df_fomc_rates_daily["DATE"] = pd.to_datetime(df_fomc_rates_daily["DATE"])
+print(f"{len(df_clean)} dates extraites et sauvegardées dans ./data/processed/FOMC_MEETINGS.csv")
+print(df_clean.tail())
 
-    # Sort before merge_asof
-    df_meeting_dates_rates.sort_values("DATE", inplace=True)
-    df_fomc_rates_daily.sort_values("DATE", inplace=True)
+# =============================================================================
+# 2. MERGE-ASOF AVEC LES TAUX DFF (JOUR SUIVANT)
+# =============================================================================
 
-    # Merge to get rate *after* meeting date
-    df_merged = pd.merge_asof(
-        df_meeting_dates_rates,
-        df_fomc_rates_daily,
-        on="DATE",
-        direction="forward",
-        allow_exact_matches=False  # force strict "date after"
-    )
+meetings = pd.read_csv("./data/processed/FOMC_MEETINGS.csv")
+dff = pd.read_csv("./data/raw/DFF.csv")
 
-    # Export
-    df_merged.rename(columns={"DATE": "observation_date"}, inplace=True)
-    df_merged.to_csv(
-        "/Users/rayane_macbook_pro/Documents/Prog_ENSAE/ML_FOR_PORTF_TRADING/FED_PROJECT/data/processed/DFF_PROCESSED.csv",
-        index=False
-    )
+meetings["observation_date"] = pd.to_datetime(meetings["observation_date"])
+dff["observation_date"] = pd.to_datetime(dff["observation_date"])
+dff = dff.dropna(subset=["observation_date", "DFF"])
 
-    return df_merged
+meetings = meetings.sort_values("observation_date")
+dff = dff.sort_values("observation_date")
 
-build_rates_at_meeting_dates()
+meetings["next_day"] = meetings["observation_date"] + pd.Timedelta(days=1)
 
+merged = pd.merge_asof(
+    meetings,
+    dff,
+    left_on="next_day",
+    right_on="observation_date",
+    direction="forward",
+    tolerance=pd.Timedelta("7D")
+)
+
+merged = merged[["observation_date_x", "DFF"]].rename(
+    columns={"observation_date_x": "meeting_date", "DFF": "next_day_rate"}
+)
+
+# =============================================================================
+# 3. FILTRE SUR UNE PLAGE DE DATES
+# =============================================================================
+
+# borne de filtrage (à modifier selon besoin)
+start_date = "1990-01-01"
+end_date = "2025-12-31"
+
+merged = merged[
+    (merged["meeting_date"] >= start_date) &
+    (merged["meeting_date"] <= end_date)
+]
+
+# =============================================================================
+# 4. EXPORT FINAL
+# =============================================================================
+merged.rename(columns={"meeting_date":"observation_date","next_day_rate":"DFF"},inplace=True)
+merged.to_csv("./data/processed/DFF_PROCESSED.csv", index=False)
+
+print(f"{len(merged)} lignes dans la plage [{start_date}, {end_date}] sauvegardées dans ./data/processed/DFF_PROCESSED.csv")
+print(merged.head(10))

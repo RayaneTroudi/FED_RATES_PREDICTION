@@ -1,11 +1,11 @@
 import pandas as pd
-from src.features.features_config import get_feature_config
+from src.features.features_config_daily import get_feature_config
 from src.features.transformations import apply_transformations
 
 # this function is used to build the dataset that 
 # the models will use by compute basic transformations of each features like MA or DIFF
 
-def build_dataset(config):
+def build_dataset_daily(config):
 
     # beginning by reading fomc meeting date because we only select data at the meeting date not at each day of the year as explain before
     df_meetings = pd.read_csv('./data/processed/DFF_PROCESSED.csv')
@@ -54,21 +54,14 @@ def build_dataset(config):
     dataset.ffill(inplace=True)
     dataset.fillna(dataset.mean(), inplace=True)
     dataset.drop('DFF_DIFF1',axis=1,inplace=True)
-    dataset.to_csv('./data/processed/DATASET_FINAL.csv',index=False)
+    dataset.to_csv('./data/processed/DAILY_BASED.csv',index=False)
     
     print("[INFO] Dataset built successfully.")
     
     return dataset
             
+build_dataset_daily(config=get_feature_config())
 
-
-    
-        
-    
-build_dataset(config=get_feature_config())
-    
-    
-  
     
     
     

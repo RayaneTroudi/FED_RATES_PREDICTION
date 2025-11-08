@@ -1,4 +1,4 @@
-from src.features.features_config import get_feature_config
+from src.features.features_config_daily import get_feature_config
 
 def compute_ma(series, window):
     return series.rolling(window).mean().round(2)
@@ -8,7 +8,9 @@ def compute_diff(series, lag):
 
 def compute_gap(series, window):
     return series - series.rolling(window).mean().round(2)
-
+    
+def compute_diff_ma(series,lag,window):
+    return compute_ma(compute_diff(series,window),lag)
 
 def apply_transformations(df_feature, feature_name, config=None):
 
@@ -28,5 +30,4 @@ def apply_transformations(df_feature, feature_name, config=None):
         elif op == "gap":
             for w in params["windows"]:
                 df_out[f"{feature_name}_GAP{w}"] = compute_gap(df_out[feature_name], w)
-
     return df_out
