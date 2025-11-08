@@ -2,17 +2,20 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.model_selection import StratifiedKFold
+import warnings
 
-# === Fonction : construction de la target ===
+warnings.filterwarnings("ignore")
+
 def build_target(df, target_col="DFF", horizon=1, invert_target=False):
+    df = df.sort_values("observation_date").copy()
     if invert_target:
         df["target"] = (df[target_col].shift(-horizon) < df[target_col]).astype(int)
     else:
         df["target"] = (df[target_col].shift(-horizon) > df[target_col]).astype(int)
     return df.dropna(subset=["target"]).copy()
 
-# === Fonction : attribution du régime monétaire ===
 def assign_regime(date):
     if date < pd.Timestamp("2008-09-01"):
         return "TIGHTENING_PRE2008"
@@ -23,15 +26,26 @@ def assign_regime(date):
     else:
         return "INFLATION_2021_2025"
 
-# === Fonction : entraînement par régime ===
 def train_by_regime(df, regime_col="regime"):
     results = []
+
     for regime, sub in df.groupby(regime_col):
-        if len(sub) < 20:
-            continue
-        print(f"\n=== RÉGIME : {regime} ===")
-        sub = build_target(sub, target_col="DFF", horizon=1, invert_target=False)
         sub = sub.sort_values("observation_date")
+        sub = build_target(sub, "DFF", 1)
+
+        if len(sub) < 40:
+            print(f"\n=== RÉGIME : {regime} — ignoré (trop peu d'observations) ===")
+            continue
+
+        y = sub["target"].astype(int)
+        if y.nunique() < 2:
+            print(f"\n=== RÉGIME : {regime} — ignoré (target constante) ===")
+            continue
+
+        print(f"\n=== RÉGIME : {regime} ===")
+        print(f"Distribution de target : {y.value_counts(normalize=True).to_dict()}")
+
+        # split temporel (pas aléatoire)
         split_idx = int(len(sub) * 0.7)
         train_df = sub.iloc[:split_idx]
         test_df = sub.iloc[split_idx:]
@@ -45,14 +59,16 @@ def train_by_regime(df, regime_col="regime"):
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
 
+        cv = StratifiedKFold(n_splits=5, shuffle=False)
         model = LogisticRegressionCV(
             Cs=10,
-            cv=5,
+            cv=cv,
             penalty="elasticnet",
             solver="saga",
             l1_ratios=[0.5],
             max_iter=10000,
-            n_jobs=-1
+            n_jobs=-1,
+            random_state=42
         )
         model.fit(X_train_scaled, y_train)
 
@@ -60,8 +76,11 @@ def train_by_regime(df, regime_col="regime"):
         y_proba = model.predict_proba(X_test_scaled)[:, 1]
 
         acc = accuracy_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, y_proba)
-        print(f"Accuracy : {acc:.3f}, AUC : {auc:.3f}")
+        auc = np.nan
+        if len(np.unique(y_test)) > 1:
+            auc = roc_auc_score(y_test, y_proba)
+
+        print(f"Accuracy : {acc:.3f}, AUC : {auc if not np.isnan(auc) else '—'}")
 
         coef_df = pd.DataFrame({
             "Feature": X_train.columns,
@@ -73,20 +92,19 @@ def train_by_regime(df, regime_col="regime"):
             "regime": regime,
             "accuracy": acc,
             "auc": auc,
-            "n_obs": len(sub)
+            "n_obs": len(sub),
+            "n_features": X_train.shape[1],
+            "class_dist": y.value_counts(normalize=True).to_dict()
         })
+
     return pd.DataFrame(results)
 
-# === Chargement du dataset ===
+# === Chargement ===
 df = pd.read_csv("./data/processed/MEETING_WITH_TEXT_MACRO.csv")
-
-# === Conversion des dates et création du régime ===
 df["observation_date"] = pd.to_datetime(df["observation_date"])
 df["regime"] = df["observation_date"].apply(assign_regime)
 
-# === Entraînement par régime ===
-summary = train_by_regime(df, regime_col="regime")
+summary = train_by_regime(df, "regime")
 
-# === Synthèse finale ===
 print("\n=== SYNTHÈSE GLOBALE ===")
 print(summary)
