@@ -60,8 +60,8 @@ def build_dataset_meeting(config):
     print("[INFO] Dataset built successfully with meeting-to-meeting transformations.")
     return dataset
 
-
       
+build_dataset_meeting(config=get_feature_config())
 
     
     
