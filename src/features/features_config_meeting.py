@@ -11,7 +11,7 @@ def get_feature_config():
             "frequency": "daily",
             "transformations": {
                 "ma": {"windows":[]},  
-                "diff": {"lags": [1,2,3,6,12]},
+                "diff": {"lags": [1,3,9]},
                 "gap": {"windows": []}               
             }
         },
@@ -19,20 +19,20 @@ def get_feature_config():
             "frequency": "monthly",
             "transformations": {
                 "ma": {"windows": []},
-                "diff": {"lags": [1,2,3,6,9,12]}
+                "diff": {"lags": [1,3,9]}
             }
         },
         "CPIAUCSL": {
             "frequency": "monthly",
             "transformations": {
-                "diff": {"lags": [1,2,3,6,12]}
+                "diff": {"lags": [1,3,9]}
             }
         },
         "T10Y2Y": {
             "frequency": "daily",
             "transformations": {
                 "ma" : {"windows":[]},
-                "diff": {"lags": [1,2,3,6,12]}
+                "diff": {"lags": [1,3,9]}
             }
         }
     }

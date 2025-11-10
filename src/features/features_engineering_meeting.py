@@ -3,28 +3,34 @@ from src.features.features_config_meeting import get_feature_config
 from src.features.transformations import apply_transformations
 
 
-# --------------------------- FOR MARKOV ------------------------------
-
-
-# thi snew version of building dataset , build the dataset by add only the last known valu eof feature at the the date 
-# of the fomc meeting. It's mean that we get th evalue of the vix the day before the meeting and we do that for each fomc
-# date then we build new features (diff, ma and so on) from meeting to meeting whereas in the last version we buil ddirectly
-# the features daily whereas we want to predict a decision from meeting to meeting so we must align the data meeting by meeting too
+# ======================================================================
+#  BUILD DATASET — VERSION DÉFINITIVE (SUPPRESSION DES NIVEAUX SAUF DFF)
+# ======================================================================
 
 def build_dataset_meeting(config):
+    """
+    Construit un dataset aligné sur les dates de meeting FOMC.
+    - Prend la dernière valeur connue de chaque indicateur à la date du meeting.
+    - Corrige le décalage temporel pour les séries mensuelles (CPI, UNRATE).
+    - Supprime toutes les variables brutes sauf DFF, utilisée pour le labelling.
+    """
 
-    # Lecture des dates de meeting FOMC
+    # === Étape 1 : chargement des dates de meeting (avec DFF)
     df_meetings = pd.read_csv('./data/processed/DFF_PROCESSED.csv')
     df_meetings['observation_date'] = pd.to_datetime(df_meetings['observation_date'])
 
     all_features = []
 
-    # Étape 1 : alignement brut sur les dates de meeting
+    # === Étape 2 : alignement meeting par meeting
     for feature_name in config.keys():
         print(f"[INFO] Collecting raw values for {feature_name} ...")
 
         df_feature = pd.read_csv(f'./data/raw/{feature_name}.csv')
         df_feature['observation_date'] = pd.to_datetime(df_feature['observation_date'])
+
+        # Correction du timing pour les séries mensuelles
+        if feature_name in ["CPIAUCSL", "UNRATE"]:
+            df_feature['observation_date'] = df_feature['observation_date'] + pd.offsets.MonthEnd(1)
 
         feature_rows = []
         for date in df_meetings['observation_date']:
@@ -42,27 +48,42 @@ def build_dataset_meeting(config):
         df_var_features = pd.DataFrame(feature_rows)
         all_features.append(df_var_features)
 
-    # Étape 2 : fusion de toutes les features alignées
+    # === Étape 3 : fusion de toutes les features alignées
     dataset = all_features[0]
     for df_next in all_features[1:]:
         dataset = pd.merge(dataset, df_next, on='observation_date', how='inner')
 
     dataset.ffill(inplace=True)
-    if 'DFF_DIFF1' in dataset.columns:
-        dataset.drop('DFF_DIFF1', axis=1, inplace=True)
 
-    # Étape 3 : application des transformations sur le dataset “meeting-based”
+    # === Étape 4 : transformations meeting-based
     for feature_name, conf in config.items():
         print(f"[INFO] Applying transformations (meeting-based) for {feature_name} ...")
         dataset = apply_transformations(dataset, feature_name, conf)
 
+    # === Étape 5 : suppression des variables brutes sauf DFF
+    cols_to_drop = [
+        c for c in dataset.columns
+        if (
+            not c.startswith("observation_date")
+            and not c.startswith("DFF")
+            and "_" not in c  # garde seulement les dérivées (ex: _DIFF, _MA)
+        )
+    ]
+    dataset.drop(columns=cols_to_drop, inplace=True, errors="ignore")
+
+    # === Étape 6 : nettoyage final
+    if 'DFF_DIFF1' in dataset.columns:
+        dataset.drop('DFF_DIFF1', axis=1, inplace=True)
+
+    # === Étape 7 : sauvegarde
     dataset.to_csv('./data/processed/MEETING_BASED.csv', index=False)
-    print("[INFO] Dataset built successfully with meeting-to-meeting transformations.")
+    print("[INFO] Dataset built successfully — all raw variables dropped except DFF.")
     return dataset
 
-      
-build_dataset_meeting(config=get_feature_config())
 
-    
-    
-    
+# ======================================================================
+#  EXECUTION
+# ======================================================================
+
+if __name__ == "__main__":
+    dataset = build_dataset_meeting(config=get_feature_config())

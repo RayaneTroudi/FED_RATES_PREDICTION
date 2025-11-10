@@ -1,110 +1,112 @@
+# =========================================================
+#  LOGISTIC REGRESSION FED DECISION - VERSION FINALE AVEC GRAPHIQUE
+# =========================================================
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.metrics import accuracy_score, roc_auc_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, classification_report
+import matplotlib.pyplot as plt
 import warnings
-
 warnings.filterwarnings("ignore")
 
-def build_target(df, target_col="DFF", horizon=1, invert_target=False):
-    df = df.sort_values("observation_date").copy()
-    if invert_target:
-        df["target"] = (df[target_col].shift(-horizon) < df[target_col]).astype(int)
-    else:
-        df["target"] = (df[target_col].shift(-horizon) > df[target_col]).astype(int)
-    return df.dropna(subset=["target"]).copy()
+# === 1. Chargement du dataset ===
+df = pd.read_csv("./data/processed/MEETING_WITH_TEXT_MACRO.csv", parse_dates=["observation_date"])
+df = df.sort_values("observation_date")
 
-def assign_regime(date):
-    if date < pd.Timestamp("2008-09-01"):
-        return "TIGHTENING_PRE2008"
-    elif date < pd.Timestamp("2016-12-01"):
-        return "QE_ZERO_RATE"
-    elif date < pd.Timestamp("2020-01-01"):
-        return "NORMALIZATION_2017_2019"
-    else:
-        return "INFLATION_2021_2025"
+# === 2. Ajout de variables de momentum (signaux économiques) ===
+for col in ["CPIAUCSL", "UNRATE", "VIXCLS", "T10Y2Y"]:
+    if col in df.columns:
+        df[f"{col}_diff3"] = df[col].diff(3)
+        df[f"{col}_diff6"] = df[col].diff(6)
 
-def train_by_regime(df, regime_col="regime"):
-    results = []
+# === 3. Cible à horizon plus long ===
+df["target"] = (df["DFF"].shift(-3) > df["DFF"]).astype(int)
+df = df.dropna(subset=["target"])
 
-    for regime, sub in df.groupby(regime_col):
-        sub = sub.sort_values("observation_date")
-        sub = build_target(sub, "DFF", 1)
+# === 4. Sélection des features pertinentes ===
+keep = [col for col in df.columns if col.startswith(("CPI", "UNRATE", "VIX", "T10Y2Y", "sentiment"))]
+X = df[keep].fillna(0)
+y = df["target"]
 
-        if len(sub) < 40:
-            print(f"\n=== RÉGIME : {regime} — ignoré (trop peu d'observations) ===")
-            continue
+# === 5. Split temporel ===
+split_idx = int(len(X) * 0.8)
+X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+dates_test = df["observation_date"].iloc[split_idx:]  # utile pour le graphique
 
-        y = sub["target"].astype(int)
-        if y.nunique() < 2:
-            print(f"\n=== RÉGIME : {regime} — ignoré (target constante) ===")
-            continue
+# === 6. Standardisation ===
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-        print(f"\n=== RÉGIME : {regime} ===")
-        print(f"Distribution de target : {y.value_counts(normalize=True).to_dict()}")
+# === 7. Régression logistique avec pondération asymétrique ===
+class_weights = {0: 1, 1: 5}  # plus de poids sur la détection des hausses
 
-        # split temporel (pas aléatoire)
-        split_idx = int(len(sub) * 0.7)
-        train_df = sub.iloc[:split_idx]
-        test_df = sub.iloc[split_idx:]
+model = LogisticRegressionCV(
+    Cs=15,
+    cv=5,
+    penalty='elasticnet',
+    solver='saga',
+    l1_ratios=[0.3, 0.5],
+    class_weight=class_weights,
+    max_iter=20000,
+    n_jobs=-1
+)
 
-        X_train = train_df.select_dtypes(include=[np.number]).drop(columns=["DFF", "target"], errors="ignore").fillna(0)
-        y_train = train_df["target"].astype(int)
-        X_test = test_df.select_dtypes(include=[np.number]).drop(columns=["DFF", "target"], errors="ignore").fillna(0)
-        y_test = test_df["target"].astype(int)
+print("Entraînement du modèle...")
+model.fit(X_train_scaled, y_train)
 
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
+# === 8. Évaluation ===
+y_pred = model.predict(X_test_scaled)
+y_proba = model.predict_proba(X_test_scaled)[:, 1]
 
-        cv = StratifiedKFold(n_splits=5, shuffle=False)
-        model = LogisticRegressionCV(
-            Cs=10,
-            cv=cv,
-            penalty="elasticnet",
-            solver="saga",
-            l1_ratios=[0.5],
-            max_iter=10000,
-            n_jobs=-1,
-            random_state=42
-        )
-        model.fit(X_train_scaled, y_train)
+acc = accuracy_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+auc = roc_auc_score(y_test, y_proba)
 
-        y_pred = model.predict(X_test_scaled)
-        y_proba = model.predict_proba(X_test_scaled)[:, 1]
+print("\n=== ÉVALUATION FINALE (RÉALISTE ET CIBLÉE) ===")
+print(f"Accuracy : {acc:.3f}")
+print(f"F1-score : {f1:.3f}")
+print(f"AUC : {auc:.3f}")
+print("\nRapport complet :")
+print(classification_report(y_test, y_pred))
 
-        acc = accuracy_score(y_test, y_pred)
-        auc = np.nan
-        if len(np.unique(y_test)) > 1:
-            auc = roc_auc_score(y_test, y_proba)
+# === 9. Ajout des résultats dans un DataFrame pour visualisation ===
+results_df = pd.DataFrame({
+    "Date": dates_test.values,
+    "True_Decision": y_test.values,
+    "Predicted": y_pred,
+    "Prob_Hike": y_proba
+})
 
-        print(f"Accuracy : {acc:.3f}, AUC : {auc if not np.isnan(auc) else '—'}")
+# === 10. Visualisation chronologique ===
+plt.figure(figsize=(14,6))
+plt.plot(results_df["Date"], results_df["Prob_Hike"], label="Probabilité prédite de HAUSSE", color="tab:blue")
+plt.scatter(
+    results_df["Date"], 
+    results_df["True_Decision"],  # pour qu'on les voie au-dessus
+    color="green", label="Décision réelle (1 = hausse)"
+)
+plt.scatter(
+    results_df["Date"], 
+    results_df["Predicted"], 
+    color="red", marker="x", label="Prédiction du modèle (1 = hausse)"
+)
 
-        coef_df = pd.DataFrame({
-            "Feature": X_train.columns,
-            "Coefficient": model.coef_[0]
-        }).sort_values("Coefficient", ascending=False)
-        print(coef_df.head(10))
+plt.axhline(0.5, color="gray", linestyle="--", linewidth=1)
+plt.title("Prédictions de hausses de taux de la Fed (Logistic Regression)")
+plt.xlabel("Date de réunion FOMC")
+plt.ylabel("Probabilité de hausse prédite")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.tight_layout()
+plt.show()
 
-        results.append({
-            "regime": regime,
-            "accuracy": acc,
-            "auc": auc,
-            "n_obs": len(sub),
-            "n_features": X_train.shape[1],
-            "class_dist": y.value_counts(normalize=True).to_dict()
-        })
+# === 11. Exemple de dernière prédiction ===
+last_prob = y_proba[-1]
+last_pred = y_pred[-1]
+last_date = results_df["Date"].iloc[-1]
 
-    return pd.DataFrame(results)
-
-# === Chargement ===
-df = pd.read_csv("./data/processed/MEETING_WITH_TEXT_MACRO.csv")
-df["observation_date"] = pd.to_datetime(df["observation_date"])
-df["regime"] = df["observation_date"].apply(assign_regime)
-
-summary = train_by_regime(df, "regime")
-
-print("\n=== SYNTHÈSE GLOBALE ===")
-print(summary)
+decision = "HAUSSE probable" if last_pred == 1 else "TAUX STABLE probable"
+print(f"\n Dernière prédiction ({last_date.date()}): {decision} ({last_prob*100:.1f}% de confiance)")
